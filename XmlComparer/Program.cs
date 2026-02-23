@@ -16,32 +16,38 @@ int countNotValidXMLFiles = 0;
 int countTotalFiles = 0;
 int countCorrectFiles = 0;
 
+
 bool ordersMatters = UserAnswerOrderMatters();
-string pathToFiles = UserInputDirToFiles();
+Console.WriteLine("Vložte absolútnu cestu k priečinkami (pomenované 0, 1, 2...) obshahujúce súbor expected{iterácia}.xml");
+string pathGeneratedXMLDir = UserInputDirToFiles();
+Console.WriteLine("Vložte absolútnu cestu k priečinku so generovanými mergovanými súbormi, pomenované mergedResult{iterácia}.xml");
+string pathMergedXMLDir = UserInputDirToFiles();
+
 string outputFileName = UserAnswerOutputFileName();
 string projetDir = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName;
 string outputPath = Path.Combine(projetDir, "outputs",outputFileName);
 
 while (true)
 {
-    string pathMergedXml = Path.Combine(pathToFiles, $"mergedResult{index}.xml");
-    string pathExpectedXML = Path.Combine(pathToFiles, index.ToString(), $"expectedResult{index}.xml");
+    string pathMergedXML = Path.Combine(pathMergedXMLDir, $"mergedResult{index}.xml");
+    string pathGeneratedXML = Path.Combine(pathGeneratedXMLDir, index.ToString(), $"expectedResult{index}.xml");
 
-    if (!FilesExists(pathMergedXml, pathExpectedXML)) break; //vypne sa ked uz nenajde dvojicu suborov s indexom
+    if (!FilesExists(pathMergedXML, pathGeneratedXML)) break; //vypne sa ked uz nenajde dvojicu suborov s indexom
 
     // orezáva biele znaky a odstraňuje prázdné riadky
-    string[] expected = File.ReadAllLines(pathExpectedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
-    string[] merged = File.ReadAllLines(pathMergedXml).Select(line => line.Trim()).Where(line => line != "").ToArray();
+    string[] expected = File.ReadAllLines(pathGeneratedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
+    string[] merged = File.ReadAllLines(pathMergedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
 
 
-    if (!IsValidXml(pathExpectedXML))
+    if (!IsValidXml(pathGeneratedXML))
     {
         Console.Error.WriteLine("Veľký problém, XML generátor vytvoril nefungujúci XML");
         return;
     }
 
     countTotalFiles++;
-    if (!IsValidXml(pathMergedXml))
+    Console.WriteLine($"Porovnávám soubory expectedResult{index}.xml a mergedResult{index}.xml");
+    if (!IsValidXml(pathMergedXML))
     {
         countNotValidXMLFiles++;
         index++;
@@ -185,13 +191,6 @@ int ElementsInWrongPosition(string[] expected, string[] merged)
 
 string UserInputDirToFiles()
 {
-    Console.WriteLine("V priečinku majte očíslované priečinky od 0");
-    Console.WriteLine("V očísloslovanom priečinku majte súbory expectedResult'číslo iterácie'.xml a mergedResult'číslo iterácie.xml'");
-    Console.WriteLine("Prvý priečinok by mal: '0/mergedResult0.xml'. Súbor 'expectedResult0.xml' by mal byť s ostatnými týmito súbormi v predkovi adresára '0'");
-    Console.WriteLine("A tak ďalej... Ak sa priečinok alebo súbor z danej iterácie nenájde, program končí.");
-    Console.WriteLine("---------------------------------------------------------------------------------------------------------------");
-    Console.WriteLine("Vložte absolútnu cestu k priečinku so súbormi");
-
     while (true)
     {
         string? input = Console.ReadLine();
