@@ -6,8 +6,6 @@ using System.Xml.Linq;
 
 var addedElementCounts = new List<int>();
 var missingElementCounts = new List<int>();
-var wrongPositionCounts = new List<int>();
-var wrongValueCounts = new List<int>();
 var indexesWithMistakes = new List<int>();
 
 int index = 0;
@@ -75,14 +73,12 @@ while (true)
     }
 
     // porovnáme elementy a hodnoty, aby sme zistili, čo presne je zle
-    var addedRemovedChangedCounts = GetAddedMissingWrongValueCounts(expected, merged);
+    var addedElements = merged.Except(expected);
+    var missingElements = expected.Except(merged);
+    var addedCount = addedElements.Count();
+    var missingCount = missingElements.Count();
 
-    var addedCount = addedRemovedChangedCounts[0];
-    var missingCount = addedRemovedChangedCounts[1];
-    var wrongValueCount = addedRemovedChangedCounts[2];
-    var wrongPositionCount = ordersMatters ? ElementsInWrongPosition(expected, merged) : 0;
-
-    if (addedCount == 0 && missingCount == 0 && wrongValueCount == 0 && wrongPositionCount == 0)
+    if (addedCount == 0 && missingCount == 0)
     {
         Console.Error.WriteLine("Nejaká chyba v porovnávaní, súbory nejsou stejné ale neidentifikovali jsme žádný rozdíl");
         countCorrectFiles++;
@@ -91,11 +87,10 @@ while (true)
     // hodnoty a index pre vypis do výstupného súboru
     addedElementCounts.Add(addedCount);
     missingElementCounts.Add(missingCount);
-    wrongValueCounts.Add(wrongValueCount);
-    wrongPositionCounts.Add(wrongPositionCount);
     indexesWithMistakes.Add(index);
 
     index++;
+    //TODO: vypis do suboru chyby konkretne
 }
 
 double averageCorrectness = countTotalFiles > 0 ? (double)countCorrectFiles / countTotalFiles * 100 : 0;
@@ -105,10 +100,10 @@ string txtOutput = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countN
 
 for (int i = 0; i < addedElementCounts.Count; i++)
 {
-    int sumMistakes = addedElementCounts[i] + missingElementCounts[i] + wrongValueCounts[i] + wrongPositionCounts[i];
+    int sumMistakes = addedElementCounts[i] + missingElementCounts[i];
     if (sumMistakes == 0) continue;
 
-    txtOutput += $"Súbor {indexesWithMistakes[i]}: Přidané elementy: {addedElementCounts[i]}, Chybějící elementy: {missingElementCounts[i]}, Nesprávné hodnoty: {wrongValueCounts[i]}, Nesprávné pozice: {wrongPositionCounts[i]}\n";
+    txtOutput += $"Súbor {indexesWithMistakes[i]}: Přidané elementy: {addedElementCounts[i]}, Chybějící elementy: {missingElementCounts[i]}\n";
 }
 Console.Write(txtOutput);
 File.WriteAllText(outputPath, txtOutput);
@@ -150,43 +145,6 @@ string UserAnswerOutputFileName()
         input = input.ToLower() + ".txt";
     }
     return input;
-}
-
-int[] GetAddedMissingWrongValueCounts(string[] expected, string[] merged)
-{
-    var addedElements = merged.Except(expected);
-    var missingElements = expected.Except(merged);
-    var wrongValueCount = 0;
-
-    foreach (var element in addedElements)
-    {
-        var label = element.Substring(0, element.IndexOf('>'));
-        // Ak removed aj added obsahujú rovnako pomenovaný element, znamená to že daný element má nesprávnu hodnotu
-        if (missingElements.Any(r => r.StartsWith(label)))
-        {
-            wrongValueCount++;
-        }
-    }
-    var addedCount = addedElements.Count() - wrongValueCount;
-    var removedCount = missingElements.Count();
- 
-    var changed = expected.Intersect(merged).Count();
-    return new int[] { addedCount, removedCount, wrongValueCount };
-}
-
-int ElementsInWrongPosition(string[] expected, string[] merged)
-{
-    int wrongPositionCount = 0;
-    var expectedSet = new HashSet<string>(expected);
-    int loops = Math.Min(expected.Length, merged.Length);
-    for (int i = 0; i < loops; i++)
-    {
-        if (expectedSet.Contains(merged[i]) && expected[i] != merged[i])
-        {
-            wrongPositionCount++;
-        }
-    }
-    return wrongPositionCount;
 }
 
 string UserInputDirToFiles()
