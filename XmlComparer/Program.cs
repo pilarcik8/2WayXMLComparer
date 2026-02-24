@@ -4,12 +4,11 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Xml.Linq;
 
-var addedElementCounts = new List<int>();
-var missingElementCounts = new List<int>();
-var indexesWithMistakes = new List<int>();
 
-int index = 0;
+// pro ukládání počtu přidaných, chybějících a špatně umístěných elementů pro každý soubor
+string textMistakesLogger = "";
 
+// Počet nevalidních XML, celkových souborů a správných souborů
 int countNotValidXMLFiles = 0;
 int countTotalFiles = 0;
 int countCorrectFiles = 0;
@@ -25,6 +24,7 @@ string outputFileName = UserAnswerOutputFileName();
 string projetDir = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName;
 string outputPath = Path.Combine(projetDir, "outputs",outputFileName);
 
+int index = 0;
 while (true)
 {
     string pathMergedXML = Path.Combine(pathMergedXMLDir, $"mergedResult{index}.xml");
@@ -33,9 +33,14 @@ while (true)
     if (!FilesExists(pathMergedXML, pathGeneratedXML)) break; //vypne sa ked uz nenajde dvojicu suborov s indexom
 
     // orezáva biele znaky a odstraňuje prázdné riadky
-    string[] expected = File.ReadAllLines(pathGeneratedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
+    string[] generated = File.ReadAllLines(pathGeneratedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
     string[] merged = File.ReadAllLines(pathMergedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
 
+    if (generated.Distinct().Count() != generated.Count())
+    {
+        Console.Error.WriteLine("Generovaný súbor má v sebe duplicity, ciže ´v generátore nastala chyba");
+        return;
+    }
 
     if (!IsValidXml(pathGeneratedXML))
     {
@@ -55,7 +60,7 @@ while (true)
     // rychla kontrola, či sú súbory úplne rovnaké, ak áno, nemusíme porovnávať elementy a hodnoty
     if (ordersMatters)
     {
-        if (AreEqualOrderMatters(expected, merged))
+        if (AreEqualOrderMatters(generated, merged))
         {
             countCorrectFiles++;
             index++;
@@ -64,7 +69,7 @@ while (true)
     }
     else
     {
-        if (AreEqualOrderDoesNotMatter(expected, merged))
+        if (AreEqualOrderDoesNotMatter(generated, merged))
         {
             countCorrectFiles++;
             index++;
@@ -73,38 +78,39 @@ while (true)
     }
 
     // porovnáme elementy a hodnoty, aby sme zistili, čo presne je zle
-    var addedElements = merged.Except(expected);
-    var missingElements = expected.Except(merged);
+    var addedElements = merged.Except(generated);
+    var missingElements = generated.Except(merged);
     var addedCount = addedElements.Count();
     var missingCount = missingElements.Count();
+    var wrongPositionCount = ordersMatters ? ElementsInWrongPosition(generated, merged) : 0;
+    var hasDuplicates = merged.Length != merged.Distinct().Count();
 
-    if (addedCount == 0 && missingCount == 0)
+    // kontrola či naozaj existuje rozdiel
+    if (addedCount == 0 && missingCount == 0 && wrongPositionCount == 0 && !hasDuplicates)
     {
         Console.Error.WriteLine("Nejaká chyba v porovnávaní, súbory nejsou stejné ale neidentifikovali jsme žádný rozdíl");
         countCorrectFiles++;
         continue;
     }
-    // hodnoty a index pre vypis do výstupného súboru
-    addedElementCounts.Add(addedCount);
-    missingElementCounts.Add(missingCount);
-    indexesWithMistakes.Add(index);
 
     index++;
-    //TODO: vypis do suboru chyby konkretne
+    string addedElementsStr = addedElements.Any() ? string.Join(", ", addedElements) : "žiadne";
+    string missingElementsStr = missingElements.Any() ? string.Join(", ", missingElements) : "žiadne";
+
+    textMistakesLogger += 
+        $"mergedResult{index}.xml:" +
+        $"\nPřidané elementy: {addedElementsStr}," +
+        $"\nChybějící elementy: {missingElementsStr}," +
+        $"\nPočet nesprávne umiestnených elementov: {wrongPositionCount}" + 
+        $"\nMá duplikácie: {hasDuplicates}\n\n";
 }
 
+// vypis + file output
 double averageCorrectness = countTotalFiles > 0 ? (double)countCorrectFiles / countTotalFiles * 100 : 0;
 
 string txtOutput = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countNotValidXMLFiles} nebolo validních XML a \n{countTotalFiles - countCorrectFiles} boli rozdielne.\n" +
     $"{averageCorrectness}% súborov boli rovnaké + validné XML súbory\n\n";
-
-for (int i = 0; i < addedElementCounts.Count; i++)
-{
-    int sumMistakes = addedElementCounts[i] + missingElementCounts[i];
-    if (sumMistakes == 0) continue;
-
-    txtOutput += $"Súbor {indexesWithMistakes[i]}: Přidané elementy: {addedElementCounts[i]}, Chybějící elementy: {missingElementCounts[i]}\n";
-}
+txtOutput += textMistakesLogger;
 Console.Write(txtOutput);
 File.WriteAllText(outputPath, txtOutput);
 
@@ -195,6 +201,12 @@ bool AreEqualOrderMatters(string[] a, string[] b)
 
 bool AreEqualOrderDoesNotMatter(string[] a, string[] b)
 {
+    // dôvod: pri tvorbe setu sa ignorovajú duplikáty 
+    if (a.Length != b.Length)
+    {
+        return false;
+    }
+
     var setA = new HashSet<string>(a);
     var setB = new HashSet<string>(b);
     return setA.SetEquals(setB);
@@ -211,5 +223,20 @@ bool IsValidXml(string path)
     {
         return false;
     }
+}
+
+int ElementsInWrongPosition(string[] expected, string[] merged)
+{
+    int wrongPositionCount = 0;
+    var expectedSet = new HashSet<string>(expected);
+    int loops = Math.Min(expected.Length, merged.Length);
+    for (int i = 0; i < loops; i++)
+    {
+        if (expectedSet.Contains(merged[i]) && expected[i] != merged[i])
+        {
+            wrongPositionCount++;
+        }
+    }
+    return wrongPositionCount;
 }
 
