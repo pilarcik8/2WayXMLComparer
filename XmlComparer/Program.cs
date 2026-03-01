@@ -57,6 +57,13 @@ while (true)
         continue;
     }
 
+    // hlavička nemá byť case-sensitive, ale zvyšok áno
+    generated[0] = generated[0].ToLower();
+    merged[0] = merged[0].ToLower();
+
+    generated[0] = generated[0].Replace("'", "\"");
+    merged[0] = merged[0].Replace("'", "\"");
+
     // rychla kontrola, či sú súbory úplne rovnaké, ak áno, nemusíme porovnávať elementy a hodnoty
     if (ordersMatters)
     {
@@ -112,7 +119,28 @@ string txtOutput = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countN
     $"{averageCorrectness}% súborov boli rovnaké + validné XML súbory\n\n";
 txtOutput += textMistakesLogger;
 Console.Write(txtOutput);
+
+Directory.CreateDirectory(Path.Combine(projetDir, "outputs"));
 File.WriteAllText(outputPath, txtOutput);
+Console.WriteLine($"Výsledky zapísané do: {outputPath}");
+
+try
+{
+    if (!string.IsNullOrWhiteSpace(pathGeneratedXMLDir) && Directory.Exists(pathGeneratedXMLDir))
+    {
+        string copyPath = Path.Combine(pathGeneratedXMLDir, outputFileName);
+        File.WriteAllText(copyPath, txtOutput);
+        Console.WriteLine($"Kópia výsledkov uložená do: {copyPath}");
+    }
+    else
+    {
+        Console.Error.WriteLine("Neplatný alebo neexistujúci priečinok pre generované XML, kópia nebola uložená.");
+    }
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"Nepodarilo sa uložiť kópiu do generovaného adresára: {ex.Message}");
+}
 
 bool UserAnswerOrderMatters()
 {
