@@ -5,51 +5,79 @@ using System.Collections.Generic;
 using System.Xml.Linq;
 
 
-// pro ukládání počtu přidaných, chybějících a špatně umístěných elementů pro každý soubor
+// pre ukladanie počtu pridaných, chýbajúcich a nesprávne umiestnených elementov pre každý súbor
 string textMistakesLogger = "";
 
-// Počet nevalidních XML, celkových souborů a správných souborů
+// Počet nevalidných XML, celkových súborov a správnych súborov
 int countNotValidXMLFiles = 0;
 int countTotalFiles = 0;
 int countCorrectFiles = 0;
+int fileNotFoundCount = 0; // počítadlo nenájdených súborov keď používateľ zadal počet iterácií
 
 
 bool ordersMatters = UserAnswerOrderMatters();
-Console.WriteLine("Vložte absolútnu cestu k priečinkami (pomenované 0, 1, 2...) obshahujúce súbor expected{iterácia}.xml");
+Console.WriteLine("Zadajte absolútnu cestu k priečinkom (pomenujte ich 0, 1, 2...) obsahujúcim súbor expectedResult{iterácia}.xml");
 string pathGeneratedXMLDir = UserInputDirToFiles();
-Console.WriteLine("Vložte absolútnu cestu k priečinku so generovanými mergovanými súbormi, pomenované mergedResult{iterácia}.xml");
+Console.WriteLine("Zadajte absolútnu cestu k priečinku s generovanými (merged) súbormi, pomenované mergedResult{iterácia}.xml");
 string pathMergedXMLDir = UserInputDirToFiles();
+
+Console.WriteLine("Zadajte počet iterácií (prázdne = pokračovať dokedy sú súbory)");
+string? iterInput = Console.ReadLine();
+int maxIteration = -1;
+if (!string.IsNullOrWhiteSpace(iterInput))
+{
+    if (!int.TryParse(iterInput.Trim(), out maxIteration))
+    {
+        Console.WriteLine("Neplatné číslo, bude pokračovať ako default (dokedy sú súbory).");
+        maxIteration = -1;
+    }
+    maxIteration--; // pretože index začíná od 0, ale uživatel zadává počet iterací od 1
+}
 
 string outputFileName = UserAnswerOutputFileName();
 string projetDir = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName;
-string outputPath = Path.Combine(projetDir, "outputs",outputFileName);
+string outputPath = Path.Combine(projetDir, "outputs", outputFileName);
 
 int index = 0;
-while (true)
+while (maxIteration <= -1 ? true : index <= maxIteration)
 {
     string pathMergedXML = Path.Combine(pathMergedXMLDir, $"mergedResult{index}.xml");
     string pathGeneratedXML = Path.Combine(pathGeneratedXMLDir, index.ToString(), $"expectedResult{index}.xml");
 
-    if (!FilesExists(pathMergedXML, pathGeneratedXML)) break; //vypne sa ked uz nenajde dvojicu suborov s indexom
+    // Keď používateľ nezadal maxIteration, pôvodné správanie: skonči keď chýba pár súborov.
+    // Keď používateľ zadal maxIteration, počítaj nenájdené súbory a pokračuj až do požadovanej iterácie.
+    if (!File.Exists(pathMergedXML) || !File.Exists(pathGeneratedXML))
+    {
+        if (maxIteration == -1)
+        {
+            break; // pôvodné správanie
+        }
+        else
+        {
+            fileNotFoundCount++;
+            index++;
+            continue;
+        }
+    }
 
-    // orezáva biele znaky a odstraňuje prázdné riadky
+    // orezáva biele znaky a odstraňuje prázdne riadky
     string[] generated = File.ReadAllLines(pathGeneratedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
     string[] merged = File.ReadAllLines(pathMergedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
 
     if (generated.Distinct().Count() != generated.Count())
     {
-        Console.Error.WriteLine("Generovaný súbor má v sebe duplicity, ciže ´v generátore nastala chyba");
+        Console.Error.WriteLine("Generovaný súbor obsahuje duplicity — chyba v generátore.");
         return;
     }
 
     if (!IsValidXml(pathGeneratedXML))
     {
-        Console.Error.WriteLine("Veľký problém, XML generátor vytvoril nefungujúci XML");
+        Console.Error.WriteLine("Veľký problém: generátor vytvoril nevalidné XML.");
         return;
     }
 
     countTotalFiles++;
-    Console.WriteLine($"Porovnávám soubory expectedResult{index}.xml a mergedResult{index}.xml");
+    Console.WriteLine($"Porovnávam súbory expectedResult{index}.xml a mergedResult{index}.xml");
     if (!IsValidXml(pathMergedXML))
     {
         countNotValidXMLFiles++;
@@ -95,28 +123,30 @@ while (true)
     // kontrola či naozaj existuje rozdiel
     if (addedCount == 0 && missingCount == 0 && wrongPositionCount == 0 && !hasDuplicates)
     {
-        Console.Error.WriteLine("Nejaká chyba v porovnávaní, súbory nejsou stejné ale neidentifikovali jsme žádný rozdíl");
+        Console.Error.WriteLine("Nastala neočakávaná chyba v porovnávaní: súbory nie sú rovnaké, ale žiadny rozdiel nebol identifikovaný.");
         countCorrectFiles++;
+        index++;
         continue;
     }
 
-    index++;
     string addedElementsStr = addedElements.Any() ? string.Join(", ", addedElements) : "žiadne";
     string missingElementsStr = missingElements.Any() ? string.Join(", ", missingElements) : "žiadne";
 
-    textMistakesLogger += 
+    textMistakesLogger +=
         $"mergedResult{index}.xml:" +
-        $"\nPřidané elementy: {addedElementsStr}," +
-        $"\nChybějící elementy: {missingElementsStr}," +
-        $"\nPočet nesprávne umiestnených elementov: {wrongPositionCount}" + 
-        $"\nMá duplikácie: {hasDuplicates}\n\n";
+        $"\nPridané elementy: {addedElementsStr}," +
+        $"\nChýbajúce elementy: {missingElementsStr}," +
+        $"\nPočet nesprávne umiestnených elementov: {wrongPositionCount}" +
+        $"\nObsahuje duplikáty: {hasDuplicates}\n\n";
+
+    index++;
 }
 
-// vypis + file output
+// výpis a uloženie do súboru
 double averageCorrectness = countTotalFiles > 0 ? (double)countCorrectFiles / countTotalFiles * 100 : 0;
 
-string txtOutput = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countNotValidXMLFiles} nebolo validních XML a \n{countTotalFiles - countCorrectFiles} boli rozdielne.\n" +
-    $"{averageCorrectness}% súborov boli rovnaké + validné XML súbory\n\n";
+string txtOutput = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countNotValidXMLFiles} nebolo validných XML, \n{fileNotFoundCount} súborov nebolo nájdených počas požadovaných iterácií a \n{countTotalFiles - countCorrectFiles} boli rozdielne.\n" +
+    $"{averageCorrectness}% súborov boli rovnaké a validné\n\n";
 txtOutput += textMistakesLogger;
 Console.Write(txtOutput);
 
@@ -134,7 +164,7 @@ try
     }
     else
     {
-        Console.Error.WriteLine("Neplatný alebo neexistujúci priečinok pre generované XML, kópia nebola uložená.");
+        Console.Error.WriteLine("Neplatný alebo neexistujúci priečinok so generovanými XML — kópia nebola uložená.");
     }
 }
 catch (Exception ex)
@@ -144,10 +174,10 @@ catch (Exception ex)
 
 bool UserAnswerOrderMatters()
 {
-    Console.WriteLine("Zaleží na poradí atribútov/elementov?");
-    Console.WriteLine("Odpovedz: yes/no");
+    Console.WriteLine("Záleží na poradí atribútov/elementov?");
+    Console.WriteLine("Odpoveď: yes/no");
     string? input = "";
-    // Cyklus pokračuje, dokiaľ nie je zadané "yes" alebo "no"
+    // cyklus pokračuje, dokiaľ nie je zadané "yes" alebo "no"
     while (input != "yes" && input != "no")
     {
         input = Console.ReadLine();
@@ -158,17 +188,15 @@ bool UserAnswerOrderMatters()
         }
         input = input.ToLower();
     }
-    if (input == "yes") return true;
-
-    return false;    
+    return input == "yes";
 }
 
 string UserAnswerOutputFileName()
 {
-    Console.WriteLine("Zadajta meno súboru do ktorého chcete zapísať výsledok:");
+    Console.WriteLine("Zadajte meno súboru, do ktorého chcete zapísať výsledok:");
     string? input = "";
-    // Cyklus pokračuje, dokiaľ nie je zadané "yes" nebo "no"
-    while (input == "")
+    // cyklus pokračuje, dokiaľ nie je zadané meno súboru
+    while (string.IsNullOrEmpty(input))
     {
         input = Console.ReadLine();
         if (input == null)
@@ -213,15 +241,6 @@ string UserInputDirToFiles()
     }
 }
 
-bool FilesExists(string pathMergedXml, string pathExpectedXML)
-{
-    if (!File.Exists(pathMergedXml) || !File.Exists(pathExpectedXML))
-    {
-        return false;
-    }
-    return true;
-}
-
 bool AreEqualOrderMatters(string[] a, string[] b)
 {
     return a.SequenceEqual(b);
@@ -229,7 +248,7 @@ bool AreEqualOrderMatters(string[] a, string[] b)
 
 bool AreEqualOrderDoesNotMatter(string[] a, string[] b)
 {
-    // dôvod: pri tvorbe setu sa ignorovajú duplikáty 
+    // pri tvorbe množiny sa ignorujú duplikáty, preto najprv porovnáme dĺžky
     if (a.Length != b.Length)
     {
         return false;
