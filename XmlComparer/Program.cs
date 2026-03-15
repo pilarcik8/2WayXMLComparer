@@ -4,15 +4,11 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Xml.Linq;
 
-
-// pre ukladanie počtu pridaných, chýbajúcich a nesprávne umiestnených elementov pre každý súbor
 string textMistakesLogger = "";
 
-// Počet nevalidných XML, celkových súborov a správnych súborov
 int countNotValidXMLFiles = 0;
-int countTotalFiles = 0;
 int countCorrectFiles = 0;
-int fileNotFoundCount = 0; // počítadlo nenájdených súborov keď používateľ zadal počet iterácií
+int fileNotFoundCount = 0;
 
 
 bool ordersMatters = UserAnswerOrderMatters();
@@ -36,7 +32,6 @@ if (!string.IsNullOrWhiteSpace(iterInput))
 
 string outputFileName = UserAnswerOutputFileName();
 string projetDir = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName;
-string outputPath = Path.Combine(projetDir, "outputs", outputFileName);
 
 int index = 0;
 while (maxIteration <= -1 ? true : index <= maxIteration)
@@ -48,16 +43,11 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
     // Keď používateľ zadal maxIteration, počítaj nenájdené súbory a pokračuj až do požadovanej iterácie.
     if (!File.Exists(pathMergedXML) || !File.Exists(pathGeneratedXML))
     {
-        if (maxIteration == -1)
-        {
-            break; // pôvodné správanie
-        }
-        else
-        {
-            fileNotFoundCount++;
-            index++;
-            continue;
-        }
+        if (maxIteration == -1) break;
+
+        index++;
+        fileNotFoundCount++;
+        continue;
     }
 
     // orezáva biele znaky a odstraňuje prázdne riadky
@@ -66,17 +56,14 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
 
     if (generated.Distinct().Count() != generated.Count())
     {
-        Console.Error.WriteLine("Generovaný súbor obsahuje duplicity — chyba v generátore.");
-        return;
+        throw new Exception("Generovaný súbor obsahuje duplicity — chyba v generátore.");
     }
 
     if (!IsValidXml(pathGeneratedXML))
     {
-        Console.Error.WriteLine("Veľký problém: generátor vytvoril nevalidné XML.");
-        return;
+        throw new Exception("Generátor vytvoril nevalidné XML.");
     }
 
-    countTotalFiles++;
     Console.WriteLine($"Porovnávam súbory expectedResult{index}.xml a mergedResult{index}.xml");
     if (!IsValidXml(pathMergedXML))
     {
@@ -123,10 +110,7 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
     // kontrola či naozaj existuje rozdiel
     if (addedCount == 0 && missingCount == 0 && wrongPositionCount == 0 && !hasDuplicates)
     {
-        Console.Error.WriteLine("Nastala neočakávaná chyba v porovnávaní: súbory nie sú rovnaké, ale žiadny rozdiel nebol identifikovaný.");
-        countCorrectFiles++;
-        index++;
-        continue;
+        throw new Exception("Nastala neočakávaná chyba v porovnávaní: súbory nie sú rovnaké, ale žiadny rozdiel nebol identifikovaný.");
     }
 
     string addedElementsStr = addedElements.Any() ? string.Join(", ", addedElements) : "žiadne";
@@ -141,18 +125,19 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
 
     index++;
 }
+int countTotalFiles = index;
 
 // výpis a uloženie do súboru
 double averageCorrectness = countTotalFiles > 0 ? (double)countCorrectFiles / countTotalFiles * 100 : 0;
+int validButDifferentCount = countTotalFiles - countNotValidXMLFiles - fileNotFoundCount - countCorrectFiles;
 
-string txtOutput = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countNotValidXMLFiles} nebolo validných XML, \n{fileNotFoundCount} súborov nebolo nájdených počas požadovaných iterácií a \n{countTotalFiles - countCorrectFiles} boli rozdielne.\n" +
+string stats = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countNotValidXMLFiles} nebolo validných XML, \n{fileNotFoundCount} súborov nebolo nájdených počas požadovaných iterácií a \n{validButDifferentCount} boli rozdielne.\n" +
     $"{averageCorrectness}% súborov boli rovnaké a validné\n\n";
-txtOutput += textMistakesLogger;
-Console.Write(txtOutput);
+string txtOutput = stats;
 
-Directory.CreateDirectory(Path.Combine(projetDir, "outputs"));
-File.WriteAllText(outputPath, txtOutput);
-Console.WriteLine($"Výsledky zapísané do: {outputPath}");
+txtOutput += textMistakesLogger;
+Console.WriteLine(textMistakesLogger);
+Console.WriteLine(stats);
 
 try
 {
@@ -164,7 +149,7 @@ try
     }
     else
     {
-        Console.Error.WriteLine("Neplatný alebo neexistujúci priečinok so generovanými XML — kópia nebola uložená.");
+        Console.Error.WriteLine("Neplatný alebo neexistujúci priečinok so generovanými XML — kópia txt vysledku nebola uložená.");
     }
 }
 catch (Exception ex)
