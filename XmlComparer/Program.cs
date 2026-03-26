@@ -6,41 +6,23 @@ using System.Xml.Linq;
 
 string textMistakesLogger = "";
 
-int countNotValidXMLFiles = 0;
 int countCorrectFiles = 0;
 int fileNotFoundCount = 0;
-
+List<int> invalidXmls = new List<int>();
 
 bool ordersMatters = UserAnswerOrderMatters();
-Console.WriteLine("Zadajte absolútnu cestu k priečinkom (pomenujte ich 0, 1, 2...) obsahujúcim súbor expectedResult{iterácia}.xml");
-string pathGeneratedXMLDir = UserInputDirToFiles();
-Console.WriteLine("Zadajte absolútnu cestu k priečinku s generovanými (merged) súbormi, pomenované mergedResult{iterácia}.xml");
-string pathMergedXMLDir = UserInputDirToFiles();
-
-Console.WriteLine("Zadajte počet iterácií (prázdne = pokračovať dokedy sú súbory)");
-string? iterInput = Console.ReadLine();
-int maxIteration = -1;
-if (!string.IsNullOrWhiteSpace(iterInput))
-{
-    if (!int.TryParse(iterInput.Trim(), out maxIteration))
-    {
-        Console.WriteLine("Neplatné číslo, bude pokračovať ako default (dokedy sú súbory).");
-        maxIteration = -1;
-    }
-    maxIteration--; // pretože index začíná od 0, ale uživatel zadává počet iterací od 1
-}
-
+string pathGeneratedXMLDir = UserInputDirToFiles("Zadajte absolútnu cestu k priečinkom (pomenujte ich 0, 1, 2...) obsahujúcim súbor expectedResult{iterácia}.xml");
+string pathMergedXMLDir = UserInputDirToFiles("Zadajte absolútnu cestu k priečinku s generovanými (merged) súbormi, pomenované mergedResult{iterácia}.xml");
+int maxIteration = UserInputMaxIter();
 string outputFileName = UserAnswerOutputFileName();
-string projetDir = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName;
 
 int index = 0;
+
 while (maxIteration <= -1 ? true : index <= maxIteration)
 {
     string pathMergedXML = Path.Combine(pathMergedXMLDir, $"mergedResult{index}.xml");
     string pathGeneratedXML = Path.Combine(pathGeneratedXMLDir, index.ToString(), $"expectedResult{index}.xml");
 
-    // Keď používateľ nezadal maxIteration, pôvodné správanie: skonči keď chýba pár súborov.
-    // Keď používateľ zadal maxIteration, počítaj nenájdené súbory a pokračuj až do požadovanej iterácie.
     if (!File.Exists(pathMergedXML) || !File.Exists(pathGeneratedXML))
     {
         if (maxIteration == -1) break;
@@ -50,29 +32,29 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
         continue;
     }
 
+    if (!IsValidXml(pathGeneratedXML))
+    {
+        throw new Exception("Očakávaný výsledokje nevalidný XML súbor.");
+    }
+
     // orezáva biele znaky a odstraňuje prázdne riadky
     string[] generated = File.ReadAllLines(pathGeneratedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
     string[] merged = File.ReadAllLines(pathMergedXML).Select(line => line.Trim()).Where(line => line != "").ToArray();
 
     if (generated.Distinct().Count() != generated.Count())
     {
-        throw new Exception("Generovaný súbor obsahuje duplicity — chyba v generátore.");
-    }
-
-    if (!IsValidXml(pathGeneratedXML))
-    {
-        throw new Exception("Generátor vytvoril nevalidné XML.");
+        throw new Exception("Očakávaný výsledok obsahuje duplicity — chyba v generátore.");
     }
 
     Console.WriteLine($"Porovnávam súbory expectedResult{index}.xml a mergedResult{index}.xml");
     if (!IsValidXml(pathMergedXML))
     {
-        countNotValidXMLFiles++;
+        invalidXmls.Add(index);
         index++;
         continue;
     }
 
-    // hlavička nemá byť case-sensitive, ale zvyšok áno
+    // dôvod: xmldiff robí rozdielne hlavičky
     generated[0] = generated[0].ToLower();
     merged[0] = merged[0].ToLower();
 
@@ -128,12 +110,19 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
 int countTotalFiles = index;
 
 // výpis a uloženie do súboru
+int countNotValidXMLFiles = invalidXmls.Count;
 double averageCorrectness = countTotalFiles > 0 ? (double)countCorrectFiles / countTotalFiles * 100 : 0;
-int validButDifferentCount = countTotalFiles - countNotValidXMLFiles - fileNotFoundCount - countCorrectFiles;
+int validButDifferentCount = countTotalFiles - (countNotValidXMLFiles + fileNotFoundCount + countCorrectFiles);
 
 string stats = $"\nPorovnaných {countTotalFiles} súborov, z toho \n{countNotValidXMLFiles} nebolo validných XML, \n{fileNotFoundCount} súborov nebolo nájdených počas požadovaných iterácií a \n{validButDifferentCount} boli rozdielne.\n" +
     $"{averageCorrectness}% súborov boli rovnaké a validné\n\n";
 string txtOutput = stats;
+
+if (countNotValidXMLFiles > 0)
+{
+    string invalidFilesStr = string.Join(", ", invalidXmls);
+    textMistakesLogger += $"Nevalidné XML súbory: {invalidFilesStr}\n\n";
+}
 
 txtOutput += textMistakesLogger;
 Console.WriteLine(textMistakesLogger);
@@ -160,11 +149,11 @@ catch (Exception ex)
 bool UserAnswerOrderMatters()
 {
     Console.WriteLine("Záleží na poradí atribútov/elementov?");
-    Console.WriteLine("Odpoveď: yes/no");
     string? input = "";
-    // cyklus pokračuje, dokiaľ nie je zadané "yes" alebo "no"
-    while (input != "yes" && input != "no")
+
+    while (input != "ano" && input != "nie")
     {
+        Console.WriteLine("Odpoveď: ano/nie");
         input = Console.ReadLine();
         if (input == null)
         {
@@ -173,14 +162,14 @@ bool UserAnswerOrderMatters()
         }
         input = input.ToLower();
     }
-    return input == "yes";
+    return input == "ano";
 }
 
 string UserAnswerOutputFileName()
 {
-    Console.WriteLine("Zadajte meno súboru, do ktorého chcete zapísať výsledok:");
+    Console.WriteLine("Zadajte meno súboru, do ktorého chcete zapísať výsledok (bez prípony):");
     string? input = "";
-    // cyklus pokračuje, dokiaľ nie je zadané meno súboru
+
     while (string.IsNullOrEmpty(input))
     {
         input = Console.ReadLine();
@@ -194,8 +183,9 @@ string UserAnswerOutputFileName()
     return input;
 }
 
-string UserInputDirToFiles()
+string UserInputDirToFiles(string startingMessage)
 {
+    Console.WriteLine(startingMessage);
     while (true)
     {
         string? input = Console.ReadLine();
@@ -226,6 +216,35 @@ string UserInputDirToFiles()
     }
 }
 
+int UserInputMaxIter()
+{
+    int maxIteration;
+    Console.WriteLine("Zadajte počet iterácií (prázdne = pokračovať dokedy sú súbory)");
+    string? iterInput = Console.ReadLine();
+    if (string.IsNullOrWhiteSpace(iterInput))
+    {
+        Console.WriteLine("Posledná iterácia nastane keď sa nenájde súbor.");
+        return -1;
+    }
+
+    if (!int.TryParse(iterInput!.Trim(), out maxIteration))
+    {
+        Console.WriteLine("Nečíselný vstup.");
+        Console.WriteLine("Posledná iterácia nastane keď sa nenájde súbor.");
+        return -1;
+    }
+
+    if (maxIteration <= 0)
+    {
+        Console.WriteLine("Zvolená príliš nízky počet iterácií.");
+        Console.WriteLine("Posledná iterácia nastane keď sa nenájde súbor.");
+        return -1;
+    }
+
+    maxIteration--; // predpokladáme, že užívateľ zadá počet iterácií počítaný od 1, ale v kódé počítáme od 0
+    return maxIteration;    
+}
+
 bool AreEqualOrderMatters(string[] a, string[] b)
 {
     return a.SequenceEqual(b);
@@ -233,7 +252,6 @@ bool AreEqualOrderMatters(string[] a, string[] b)
 
 bool AreEqualOrderDoesNotMatter(string[] a, string[] b)
 {
-    // pri tvorbe množiny sa ignorujú duplikáty, preto najprv porovnáme dĺžky
     if (a.Length != b.Length)
     {
         return false;
