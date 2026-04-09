@@ -26,7 +26,10 @@ while (maxIteration <= -1 ? true : index <= maxIteration)
     if (!File.Exists(pathMergedXML) || !File.Exists(pathGeneratedXML))
     {
         if (maxIteration == -1) break;
-
+        if (!File.Exists(pathGeneratedXML))
+        {
+            throw new Exception($"Očakávaný výsledok nebol nalezený: {pathGeneratedXML}\n. Iterácia mala skončiť na čísle: {maxIteration}");
+        }
         index++;
         fileNotFoundCount++;
         continue;
